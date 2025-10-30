@@ -1,0 +1,27 @@
+#!/bin/bash
+# Helper to (re)provision user public_html bind mounts for $app
+set -e
+
+source /usr/share/yunohost/helpers
+
+app="personal_webpages"
+data_dir=$(ynh_app_setting_get $app --key=data_dir)
+[ -n "$data_dir" ] || exit 0
+
+provision_userdir() {
+  local u="$1"; local home="/home/$u"; local src="$home/public_html"; local dst="$data_dir/exports/$u"
+  [ -d "$src" ] || { mkdir -p "$src"; chown "$u:$u" "$src"; chmod 0755 "$src"; }
+  mkdir -p "$dst"; chown "$app:www-data" "$dst"; chmod 0755 "$dst"
+  if ! grep -qE "^$src\s+$dst\s+none\s+bind,ro" /etc/fstab; then
+    echo "$src $dst none bind,ro 0 0" >> /etc/fstab
+  fi
+  mountpoint -q "$dst" || mount "$dst" || true
+}
+
+if getent group ssh >/dev/null; then
+  for u in $(getent group ssh | awk -F: '{print $4}' | tr ',' ' '); do
+    [ -n "$u" ] && provision_userdir "$u"
+  done
+fi
+
+systemctl reload nginx || true
